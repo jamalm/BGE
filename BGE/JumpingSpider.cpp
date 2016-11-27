@@ -36,7 +36,59 @@ void JumpingSpider::Cleanup()
 	Game::Cleanup();
 }
 
-shared_ptr<PhysicsController> JumpingSpider::CreateSpider()
+shared_ptr<PhysicsController> JumpingSpider::CreateLeg(bool leftLeg)	//if the leg is on the left
+{
+	glm::vec3 position = glm::vec3(0, 10, 0);
+	if (leftLeg) {
+		glm::quat qupper = glm::angleAxis(90.0f, glm::vec3(0, 0, 1));
+		glm::quat qlower = glm::angleAxis(-90.0f, glm::vec3(0, 0, 1));
+		position = glm::vec3(5, 10, 0);
+		shared_ptr<PhysicsController> segment = physicsFactory->CreateBox(4, .5, .5, position, qupper);
+		position = glm::vec3(10, 10, 0);
+		shared_ptr<PhysicsController> segment2 = physicsFactory->CreateBox(8, .5, .5, position, qlower);
+
+		btTransform t1, t2;
+
+		t1.setIdentity();
+		t2.setIdentity();
+		t1.setOrigin(btVector3(2.5, 0, 0));
+		t2.setRotation(GLToBtQuat(glm::angleAxis(90.0f, glm::vec3(0, 0, 1))));
+		t2.setOrigin(btVector3(-2.5, 0, 0));
+
+		btFixedConstraint* hinge2 =
+			new btFixedConstraint(*segment->rigidBody, *segment2->rigidBody, t1, t2);
+		dynamicsWorld->addConstraint(hinge2);
+
+		return segment;
+	}
+	else {
+		glm::quat qupper = glm::angleAxis(-90.0f, glm::vec3(0, 0, 1));
+		glm::quat qlower = glm::angleAxis(90.0f, glm::vec3(0, 0, 1));
+		position = glm::vec3(-5, 10, 0);
+		shared_ptr<PhysicsController> segment = physicsFactory->CreateBox(4, .5, .5, position, glm::quat());
+		position = glm::vec3(-10, 10, 0);
+		shared_ptr<PhysicsController> segment2 = physicsFactory->CreateBox(8, .5, .5, position, qlower);
+		
+		btTransform t1, t2;
+
+		t1.setIdentity();
+		t2.setIdentity();
+		t1.setOrigin(btVector3(-2.5, 0, 0));
+		t2.setRotation(GLToBtQuat(glm::angleAxis(-90.0f, glm::vec3(0, 0, 1))));
+		t2.setOrigin(btVector3(2.5, 0, 0));
+
+		btFixedConstraint* hinge2 =
+			new btFixedConstraint(*segment->rigidBody, *segment2->rigidBody, t1, t2);
+		dynamicsWorld->addConstraint(hinge2);
+		
+		return segment;
+	}
+
+
+	
+}
+
+shared_ptr<PhysicsController> JumpingSpider::CreateBody(vector<shared_ptr<PhysicsController>> limbs)
 {
 	glm::vec3 position = glm::vec3(0, 10, 0);
 
@@ -44,12 +96,9 @@ shared_ptr<PhysicsController> JumpingSpider::CreateSpider()
 	float width = 4;
 	float height = 3;
 	float length = 6;
-	float turningAngle = glm::half_pi<float>() / 4;
-
-
+	
 	offset = glm::vec3(0, 0, length + 1);
 
-	//body parts and legs
 	shared_ptr<PhysicsController> forebody = physicsFactory->CreateBox(width, height, length, position, glm::quat());
 	shared_ptr<PhysicsController> abdomen = physicsFactory->CreateBox(5, 4, 4, position + offset, glm::quat());
 
@@ -66,33 +115,53 @@ shared_ptr<PhysicsController> JumpingSpider::CreateSpider()
 	forebody_abdomen = new btFixedConstraint(*forebody->rigidBody, *abdomen->rigidBody, transformA, transformB);
 	dynamicsWorld->addConstraint(forebody_abdomen);
 
-	glm::quat qupper = glm::angleAxis(-45.0f, glm::vec3(0, 0, 1));
-	glm::quat qlower = glm::angleAxis(45.0f, glm::vec3(0, 0, 1));
+	
+	return forebody;
+}
 
-	position = glm::vec3(50,10,0);
-	shared_ptr<PhysicsController> segment = physicsFactory->CreateBox(4, .5, .5, position, qupper);
-	position = glm::vec3(55, 10, 0);
-	//shared_ptr<PhysicsController> segment2 = physicsFactory->CreateBox(4, .5, .5, position, qlower);
+shared_ptr<PhysicsController> JumpingSpider::CreateSpider()
+{
+	
+	vector<shared_ptr<PhysicsController>> limbs;
+	float turningAngle = glm::half_pi<float>() / 4;
 
-	btVector3 bodyPivot = btVector3(1-width, 0, length / 4);
-	btVector3 thighPivot = btVector3(2, 0, 0);
+	float width = 4;
+	float height = 3;
+	float length = 6;
 
+	//body parts and legs
+	//shared_ptr<PhysicsController> body = CreateBody();
+
+	shared_ptr<PhysicsController> rightleg = CreateLeg(false);
+
+	shared_ptr<PhysicsController> leftleg = CreateLeg(true);
+
+	limbs.push_back(leftleg);
+	limbs.push_back(rightleg);
+	shared_ptr<PhysicsController> body = CreateBody(limbs);
+	
+
+	btVector3 bodyPivot = btVector3(width+1, 1, length / 4);
+	btVector3 legPivot = btVector3(0, 0, 0);
+
+	
 	btHingeConstraint*  hinge1 =
-		new btHingeConstraint(*forebody->rigidBody, *segment->rigidBody, bodyPivot, thighPivot, btVector3(0, 1, 0), btVector3(-1, 1, 0), true);
+		new btHingeConstraint(*body->rigidBody, *leftleg->rigidBody, bodyPivot, legPivot, btVector3(0, 1, 0), btVector3(1, 1, 0), true);
 	hinge1->setLimit(-turningAngle, turningAngle);
 	dynamicsWorld->addConstraint(hinge1); 
+	
+	bodyPivot = btVector3(-width-1 ,1, length/4	);
+	legPivot = btVector3(0,0,0);
 
+	btHingeConstraint*  hinge2 =
+		new btHingeConstraint(*body->rigidBody, *rightleg->rigidBody, bodyPivot, legPivot, btVector3(0, 1, 0), btVector3(-1, 1, 0), true);
+	hinge2->setLimit(-turningAngle, turningAngle);
+	dynamicsWorld->addConstraint(hinge2);
+	
 	//btVector3 thighPivot2 = btVector3();
 	//btVector3 calfPivot = btVector3();
-	/*
-	transformA.setIdentity();
-	transformB.setIdentity();
-	transformA.setOrigin(btVector3(2.5, 0,0));
-	transformB.setOrigin(btVector3(-2.5, 0,0));
+	
 
-	btFixedConstraint* hinge2 =
-		new btFixedConstraint(*segment->rigidBody,*segment2->rigidBody, transformA, transformB);
-	dynamicsWorld->addConstraint(hinge2);
 		/*
 
 
